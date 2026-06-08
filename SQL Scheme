@@ -1,0 +1,182 @@
+-- ============================================================================
+-- 0. ENUMS & EXTENSIONS
+-- ============================================================================
+CREATE TYPE content_type_enum AS ENUM ('Text', 'Subtitles', 'QuizQuestion', 'Description');
+CREATE TYPE job_status_enum AS ENUM ('Pending', 'Processing', 'Completed', 'Failed');
+CREATE TYPE review_status_enum AS ENUM ('Pending', 'Approved', 'NeedsChanges');
+
+-- ============================================================================
+-- 1. COURSE CONTENT LAYER
+-- ============================================================================
+
+-- Master categories for skills (e.g., Data Science, Leadership)
+CREATE TABLE SKILL_CATEGORY (
+    CategoryID SERIAL PRIMARY KEY,
+    Name VARCHAR(100) NOT NULL UNIQUE,
+    Description TEXT
+);
+
+-- Core Course information
+CREATE TABLE COURSE (
+    CourseID SERIAL PRIMARY KEY,
+    Title VARCHAR(255) NOT NULL,
+    Desc TEXT,
+    CategoryID INT NOT NULL,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_course_category FOREIGN KEY (CategoryID) 
+        REFERENCES SKILL_CATEGORY(CategoryID) ON DELETE RESTRICT
+);
+
+-- Lessons grouped within a course
+CREATE TABLE LESSON (
+    LessonID SERIAL PRIMARY KEY,
+    CourseID INT NOT NULL,
+    Title VARCHAR(255) NOT NULL,
+    Sequence INT NOT NULL,
+    CONSTRAINT fk_lesson_course FOREIGN KEY (CourseID) 
+        REFERENCES COURSE(CourseID) ON DELETE CASCADE,
+    CONSTRAINT uq_lesson_sequence UNIQUE (CourseID, Sequence)
+);
+
+-- Course Assessments / Quizzes
+CREATE TABLE ASSESSMENT (
+    AssessID SERIAL PRIMARY KEY,
+    CourseID INT NOT NULL,
+    Type VARCHAR(50) NOT NULL, -- e.g., 'Final Exam', 'Module Quiz'
+    CONSTRAINT fk_assessment_course FOREIGN KEY (CourseID) 
+        REFERENCES COURSE(CourseID) ON DELETE CASCADE
+);
+
+-- Primary/Source text assets that require translation
+CREATE TABLE PRIMARY_CONTENT (
+    ContentID SERIAL PRIMARY KEY,
+    LessonID INT NOT NULL,
+    Type content_type_enum NOT NULL DEFAULT 'Text',
+    ContentBody TEXT NOT NULL,
+    SrcLanguage VARCHAR(10) NOT NULL DEFAULT 'en-US', -- BCP 47 language tag
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_primary_lesson FOREIGN KEY (LessonID) 
+        REFERENCES LESSON(LessonID) ON DELETE CASCADE
+);
+
+-- ============================================================================
+-- 2. MULTILINGUAL & AI CORE REGISTER
+-- ============================================================================
+
+-- Supported languages repository
+CREATE TABLE LANGUAGE (
+    LangID SERIAL PRIMARY KEY,
+    Name VARCHAR(100) NOT NULL,
+    Locale VARCHAR(10) NOT NULL UNIQUE -- e.g., 'es-ES', 'fr-FR', 'ja-JP'
+);
+
+-- Junction table maps languages mapped to specific courses
+CREATE TABLE TARGET_LANGUAGES (
+    CourseID INT,
+    LangID INT,
+    PRIMARY KEY (CourseID, LangID),
+    CONSTRAINT fk_target_course FOREIGN KEY (CourseID) REFERENCES COURSE(CourseID) ON DELETE CASCADE,
+    CONSTRAINT fk_target_lang FOREIGN KEY (LangID) REFERENCES LANGUAGE(LangID) ON DELETE CASCADE
+);
+
+-- Registered AI Translation Models / LLMs
+CREATE TABLE AI_MODEL (
+    ModelID SERIAL PRIMARY KEY,
+    Name VARCHAR(100) NOT NULL,          -- e.g., 'GPT-4o', 'Claude-3-5-Sonnet', 'DeepL-API'
+    Type VARCHAR(50) NOT NULL,          -- e.g., 'LLM', 'NMT'
+    Version VARCHAR(30) NOT NULL,
+    IsActive BOOLEAN DEFAULT TRUE
+);
+
+-- ============================================================================
+-- 3. AI ENGINE PIPELINE LAYER
+-- ============================================================================
+
+-- Tracks independent localization execution jobs
+CREATE TABLE LOCALIZATION_JOB (
+    JobID SERIAL PRIMARY KEY,
+    ContentID INT NOT NULL,
+    TargetLangID INT NOT NULL,
+    ModelID INT NOT NULL,
+    Status job_status_enum NOT NULL DEFAULT 'Pending',
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_job_content FOREIGN KEY (ContentID) REFERENCES PRIMARY_CONTENT(ContentID) ON DELETE CASCADE,
+    CONSTRAINT fk_job_lang FOREIGN KEY (TargetLangID) REFERENCES LANGUAGE(LangID) ON DELETE RESTRICT,
+    CONSTRAINT fk_job_model FOREIGN KEY (ModelID) REFERENCES AI_MODEL(ModelID) ON DELETE RESTRICT
+);
+
+-- Raw translation payloads returned from the engine
+CREATE TABLE TRANSLATION_OUTPUT (
+    TransID SERIAL PRIMARY KEY,
+    JobID INT NOT NULL UNIQUE, -- 1:1 relationship with its generation job execution
+    LocalizedText TEXT NOT NULL,
+    Score NUMERIC(5,2), -- AI evaluation/confidence score (e.g., BLEU, COMET, or LLM-as-a-judge score out of 100)
+    GeneratedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_output_job FOREIGN KEY (JobID) REFERENCES LOCALIZATION_JOB(JobID) ON DELETE CASCADE
+);
+
+-- ============================================================================
+-- 4. QUALITY CONTROL & PRODUCTION LAYER
+-- ============================================================================
+
+-- Human translators/editors profiles
+CREATE TABLE REVIEWER (
+    ReviewerID SERIAL PRIMARY KEY,
+    Name VARCHAR(150) NOT NULL,
+    Email VARCHAR(150) NOT NULL UNIQUE,
+    IsActive BOOLEAN DEFAULT TRUE
+);
+
+-- Human-in-the-loop audit logs
+CREATE TABLE CONTENT_REVIEW (
+    ReviewID SERIAL PRIMARY KEY,
+    TransID INT NOT NULL,
+    ReviewerID INT NOT NULL,
+    Feedback TEXT,
+    Status review_status_enum NOT NULL DEFAULT 'Pending',
+    ReviewedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_review_trans FOREIGN KEY (TransID) REFERENCES TRANSLATION_OUTPUT(TransID) ON DELETE CASCADE,
+    CONSTRAINT fk_review_reviewer FOREIGN KEY (ReviewerID) REFERENCES REVIEWER(ReviewerID) ON DELETE RESTRICT
+);
+
+-- The final production-ready localized content repository served to users
+CREATE TABLE LOCALIZED_CONTENT (
+    LContentID SERIAL PRIMARY KEY,
+    ContentID INT NOT NULL,
+    LangID INT NOT NULL,
+    ContentBody TEXT NOT NULL,
+    Version INT NOT NULL DEFAULT 1,
+    IsPublished BOOLEAN DEFAULT FALSE,
+    LastUpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_loc_content_primary FOREIGN KEY (ContentID) REFERENCES PRIMARY_CONTENT(ContentID) ON DELETE CASCADE,
+    CONSTRAINT fk_loc_content_lang FOREIGN KEY (LangID) REFERENCES LANGUAGE(LangID) ON DELETE RESTRICT,
+    CONSTRAINT uq_content_lang_version UNIQUE (ContentID, LangID, Version)
+);
+
+-- ============================================================================
+-- 5. PERFORMANCE INDEXES
+-- ============================================================================
+CREATE INDEX idx_job_status ON LOCALIZATION_JOB(Status);
+CREATE INDEX idx_localized_lookup ON LOCALIZED_CONTENT(ContentID, LangID, IsPublished);
+CREATE INDEX idx_primary_lesson ON PRIMARY_CONTENT(LessonID);
+
+-- ============================================================================
+-- 6. AUTOMATED AUTO-INCREMENT VERSION TRIGGER (PostgreSQL)
+-- ============================================================================
+CREATE OR REPLACE FUNCTION set_localized_content_version()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Automatically look up the maximum version variant for this text block/language pairing
+    NEW.Version := COALESCE(
+        (SELECT MAX(Version) FROM LOCALIZED_CONTENT 
+         WHERE ContentID = NEW.ContentID AND LangID = NEW.LangID), 0
+    ) + 1;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER tg_auto_version_localized_content
+BEFORE INSERT ON LOCALIZED_CONTENT
+FOR EACH ROW
+EXECUTE FUNCTION set_localized_content_version();
