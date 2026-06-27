@@ -2,8 +2,9 @@
 
 import React, { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useApp, ContentType, AIModelType } from "@/context/AppContext";
-import { 
+import { ContentType, AIModelType } from "@/context/AppContext";
+import { api } from "@/lib/api";
+import {
   Upload, 
   FileVideo, 
   FileText, 
@@ -25,9 +26,35 @@ const SUPPORTED_LANGUAGES = [
   "Portuguese"
 ];
 
+function getFileType(file: File): "video" | "pdf" | null {
+  const isVideo =
+    file.type.startsWith("video/") || /\.(mp4|mov|avi|webm|mkv)$/i.test(file.name);
+  const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+  if (isVideo) return "video";
+  if (isPdf) return "pdf";
+  return null;
+}
+
+function mapContentTypeToApi(uiType: ContentType, fileType: "video" | "pdf"): string {
+  if (uiType === "PDF Document") return "pdf";
+  if (uiType === "Video Course") return "video";
+  return fileType;
+}
+
+function mapAiModelToApi(model: AIModelType): string {
+  switch (model) {
+    case "Fast":
+      return "claude-haiku-4-5";
+    case "High Accuracy":
+      return "claude-opus-4-6";
+    case "Balanced":
+    default:
+      return "claude-sonnet-4-6";
+  }
+}
+
 export default function CourseUpload() {
   const router = useRouter();
-  const { addCourse } = useApp();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Form State
@@ -36,7 +63,7 @@ export default function CourseUpload() {
   const [targetLangs, setTargetLangs] = useState<string[]>([]);
   const [contentType, setContentType] = useState<ContentType>("Video Course");
   const [aiModel, setAiModel] = useState<AIModelType>("Balanced");
-  const [uploadedFile, setUploadedFile] = useState<{ name: string; size: string; type: string } | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   // UI state
   const [isDragActive, setIsDragActive] = useState(false);
@@ -62,60 +89,36 @@ export default function CourseUpload() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
+  const processSelectedFile = (file: File) => {
+    const fileType = getFileType(file);
+    if (!fileType) {
+      setErrorMsg("Invalid file type. Please upload a Video (MP4/etc) or PDF.");
+      return;
+    }
+
+    setUploadedFile(file);
+    setErrorMsg("");
+
+    if (!courseTitle) {
+      const cleanName = file.name.substring(0, file.name.lastIndexOf(".")) || file.name;
+      setCourseTitle(cleanName);
+    }
+    setContentType(fileType === "video" ? "Video Course" : "PDF Document");
+  };
+
   const handleFileDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragActive(false);
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const file = e.dataTransfer.files[0];
-      const sizeStr = formatFileSize(file.size);
-      const isVideo = file.type.startsWith("video/");
-      const isPdf = file.type === "application/pdf";
-
-      if (isVideo || isPdf) {
-        setUploadedFile({
-          name: file.name,
-          size: sizeStr,
-          type: isVideo ? "video" : "pdf"
-        });
-        setErrorMsg("");
-        
-        // Auto fill title if empty
-        if (!courseTitle) {
-          const cleanName = file.name.substring(0, file.name.lastIndexOf(".")) || file.name;
-          setCourseTitle(cleanName);
-        }
-        // Match content type
-        setContentType(isVideo ? "Video Course" : "PDF Document");
-      } else {
-        setErrorMsg("Invalid file type. Please upload a Video (MP4/etc) or PDF.");
-      }
+      processSelectedFile(e.dataTransfer.files[0]);
     }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      const sizeStr = formatFileSize(file.size);
-      const isVideo = file.type.startsWith("video/");
-      const isPdf = file.type === "application/pdf";
-
-      if (isVideo || isPdf) {
-        setUploadedFile({
-          name: file.name,
-          size: sizeStr,
-          type: isVideo ? "video" : "pdf"
-        });
-        setErrorMsg("");
-        if (!courseTitle) {
-          const cleanName = file.name.substring(0, file.name.lastIndexOf(".")) || file.name;
-          setCourseTitle(cleanName);
-        }
-        setContentType(isVideo ? "Video Course" : "PDF Document");
-      } else {
-        setErrorMsg("Invalid file type. Please upload a Video or PDF.");
-      }
+      processSelectedFile(e.target.files[0]);
     }
   };
 
@@ -131,7 +134,7 @@ export default function CourseUpload() {
     setTargetLangs(prev => prev.filter(l => l !== lang));
   };
 
-  const handleStartLocalization = (e: React.FormEvent) => {
+  const handleStartLocalization = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!courseTitle.trim()) {
       setErrorMsg("Please provide a course title.");
@@ -146,26 +149,41 @@ export default function CourseUpload() {
       return;
     }
 
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setErrorMsg("You are not signed in. Please log in to upload courses.");
+      return;
+    }
+
+    const fileType = getFileType(uploadedFile);
+    if (!fileType) {
+      setErrorMsg("Invalid file type. Please upload a Video (MP4/etc) or PDF.");
+      return;
+    }
+
     setIsSubmitting(true);
     setErrorMsg("");
 
-    setTimeout(() => {
-      // Add course to state context
-      addCourse({
-        title: courseTitle,
-        contentType,
-        originalLang: sourceLang,
-        targetLangs,
-        status: "Queued",
-        date: new Date().toISOString().split("T")[0],
-        aiModel,
-        fileSize: uploadedFile.size,
+    try {
+      const uploadResult = await api.uploadCourse(token, {
+        title: courseTitle.trim(),
+        source_language: sourceLang,
+        content_type: mapContentTypeToApi(contentType, fileType),
+        file: uploadedFile,
       });
 
-      setIsSubmitting(false);
-      // Route user to progress monitor so they can observe operations
+      await api.startLocalization(token, {
+        course_id: uploadResult.course_id,
+        target_languages: targetLangs,
+        ai_model: mapAiModelToApi(aiModel),
+      });
+
       router.push("/dashboard/progress");
-    }, 1500);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Upload failed. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -230,7 +248,7 @@ export default function CourseUpload() {
             ) : (
               <div className="space-y-6 flex flex-col items-center max-w-sm">
                 <div className="w-16 h-16 rounded-full bg-emerald-500/15 flex items-center justify-center text-emerald-400 border border-emerald-500/20">
-                  {uploadedFile.type === "video" ? (
+                  {getFileType(uploadedFile) === "video" ? (
                     <FileVideo className="w-7 h-7" />
                   ) : (
                     <FileText className="w-7 h-7" />
@@ -238,7 +256,9 @@ export default function CourseUpload() {
                 </div>
                 <div className="w-full">
                   <p className="text-sm font-semibold text-white truncate px-4">{uploadedFile.name}</p>
-                  <p className="text-xs text-slate-400 mt-1">{uploadedFile.size} • {uploadedFile.type.toUpperCase()}</p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    {formatFileSize(uploadedFile.size)} • {getFileType(uploadedFile)?.toUpperCase()}
+                  </p>
                 </div>
                 <button
                   type="button"

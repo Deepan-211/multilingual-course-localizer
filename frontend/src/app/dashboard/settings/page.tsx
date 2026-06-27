@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
-import { useApp } from "@/context/AppContext";
-import { 
+import React, { useState, useEffect, useCallback } from "react";
+import { api } from "@/lib/api";
+import {
   User, 
   Settings as SettingsIcon, 
   ShieldAlert, 
@@ -14,90 +14,181 @@ import {
   Trash2,
   Lock,
   Languages,
-  ChevronDown
+  ChevronDown,
+  AlertCircle,
+  X,
 } from "lucide-react";
 
 export default function SettingsPage() {
-  const { userProfile, settings, updateUserProfile, updateSettings } = useApp();
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
 
   // Tabs
   const [activeTab, setActiveTab] = useState<"profile" | "language" | "account">("profile");
 
   // Profile Form State
-  const [profileName, setProfileName] = useState(userProfile.name);
-  const [profileEmail, setProfileEmail] = useState(userProfile.email);
-  const [profileRole, setProfileRole] = useState(userProfile.role);
+  const [profileName, setProfileName] = useState("");
+  const [profileEmail, setProfileEmail] = useState("");
+  const [profileRole, setProfileRole] = useState<"Instructor" | "Admin">("Instructor");
   const [isProfileSaved, setIsProfileSaved] = useState(false);
+  const [isProfileSaving, setIsProfileSaving] = useState(false);
 
   // Language Preferences State
-  const [defaultSourceLang, setDefaultSourceLang] = useState(settings.defaultSourceLang);
-  const [preferredTargetLangs, setPreferredTargetLangs] = useState<string[]>(settings.preferredTargetLangs);
-  const [defaultAiModel, setDefaultAiModel] = useState(settings.defaultAiModel);
-  const [translationMemory, setTranslationMemory] = useState(settings.translationMemory);
-  const [autoApprove, setAutoApprove] = useState(settings.autoApproveHighConfidence);
+  const [defaultSourceLang, setDefaultSourceLang] = useState("English");
+  const [preferredTargetLangs, setPreferredTargetLangs] = useState<string[]>([]);
+  const [defaultAiModel, setDefaultAiModel] = useState<"Fast" | "Balanced" | "High Accuracy">("Balanced");
+  const [translationMemory, setTranslationMemory] = useState(true);
+  const [autoApprove, setAutoApprove] = useState(false);
   const [isLanguageSaved, setIsLanguageSaved] = useState(false);
+  const [isLanguageSaving, setIsLanguageSaving] = useState(false);
   const [isTargetLangOpen, setIsTargetLangOpen] = useState(false);
 
   // Password / Notifications State
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [notifUpload, setNotifUpload] = useState(settings.emailNotifications.uploadSuccess);
-  const [notifComplete, setNotifComplete] = useState(settings.emailNotifications.localizationComplete);
-  const [notifAlerts, setNotifAlerts] = useState(settings.emailNotifications.systemAlerts);
+  const [notifUpload, setNotifUpload] = useState(true);
+  const [notifComplete, setNotifComplete] = useState(true);
+  const [notifAlerts, setNotifAlerts] = useState(false);
   const [isAccountSaved, setIsAccountSaved] = useState(false);
+  const [isAccountSaving, setIsAccountSaving] = useState(false);
 
-  // Constants
   const SUPPORTED_LANGUAGES = ["Tamil", "Hindi", "Spanish", "French", "German", "Japanese", "Arabic", "Portuguese"];
 
-  const handleProfileSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    updateUserProfile({
-      name: profileName,
-      email: profileEmail,
-      role: profileRole,
-      avatar: profileName.split(" ").map(n => n[0]).join("").toUpperCase()
-    });
-    setIsProfileSaved(true);
-    setTimeout(() => setIsProfileSaved(false), 2000);
-  };
-
-  const handleLanguageSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    updateSettings({
-      defaultSourceLang,
-      preferredTargetLangs,
-      defaultAiModel,
-      translationMemory,
-      autoApproveHighConfidence: autoApprove
-    });
-    setIsLanguageSaved(true);
-    setTimeout(() => setIsLanguageSaved(false), 2000);
-  };
-
-  const handleAccountSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    updateSettings({
-      emailNotifications: {
-        uploadSuccess: notifUpload,
-        localizationComplete: notifComplete,
-        systemAlerts: notifAlerts
-      }
-    });
-    
-    if (newPassword) {
-      if (newPassword !== confirmPassword) {
-        alert("New passwords do not match!");
-        return;
-      }
-      alert("Password updated successfully!");
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
+  const loadSettings = useCallback(async () => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setErrorMsg("You are not signed in. Please log in to view settings.");
+      setIsLoading(false);
+      return;
     }
 
-    setIsAccountSaved(true);
-    setTimeout(() => setIsAccountSaved(false), 2000);
+    setIsLoading(true);
+    setErrorMsg("");
+
+    try {
+      const [profile, settings] = await Promise.all([
+        api.getMe(token),
+        api.getSettings(token),
+      ]);
+
+      setProfileName(profile.name);
+      setProfileEmail(profile.email);
+      setDefaultSourceLang(settings.default_source_language);
+      setPreferredTargetLangs(settings.default_target_languages);
+      setNotifUpload(settings.email_notifications);
+      setNotifComplete(settings.localization_complete);
+      setNotifAlerts(settings.weekly_digest);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Failed to load settings.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSettings();
+  }, [loadSettings]);
+
+  const handleProfileSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setErrorMsg("You are not signed in. Please log in to save changes.");
+      return;
+    }
+
+    setIsProfileSaving(true);
+    setErrorMsg("");
+
+    try {
+      const updated = await api.updateProfile(token, { name: profileName.trim() });
+      setProfileName(updated.name);
+      setProfileEmail(updated.email);
+      setIsProfileSaved(true);
+      setTimeout(() => setIsProfileSaved(false), 2000);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Failed to save profile.");
+    } finally {
+      setIsProfileSaving(false);
+    }
+  };
+
+  const handleLanguageSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (preferredTargetLangs.length === 0) {
+      setErrorMsg("Please select at least one preferred target language.");
+      return;
+    }
+
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setErrorMsg("You are not signed in. Please log in to save changes.");
+      return;
+    }
+
+    setIsLanguageSaving(true);
+    setErrorMsg("");
+
+    try {
+      await api.updateLanguageSettings(token, {
+        default_source_language: defaultSourceLang,
+        default_target_languages: preferredTargetLangs,
+      });
+      setIsLanguageSaved(true);
+      setTimeout(() => setIsLanguageSaved(false), 2000);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Failed to save language preferences.");
+    } finally {
+      setIsLanguageSaving(false);
+    }
+  };
+
+  const handleAccountSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setErrorMsg("You are not signed in. Please log in to save changes.");
+      return;
+    }
+
+    if (newPassword && newPassword !== confirmPassword) {
+      setErrorMsg("New passwords do not match!");
+      return;
+    }
+
+    if (newPassword && !currentPassword) {
+      setErrorMsg("Please enter your current password to set a new password.");
+      return;
+    }
+
+    setIsAccountSaving(true);
+    setErrorMsg("");
+
+    try {
+      if (newPassword) {
+        await api.changePassword(token, {
+          old_password: currentPassword,
+          new_password: newPassword,
+        });
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+      }
+
+      await api.updateNotificationSettings(token, {
+        email_notifications: notifUpload,
+        localization_complete: notifComplete,
+        weekly_digest: notifAlerts,
+      });
+
+      setIsAccountSaved(true);
+      setTimeout(() => setIsAccountSaved(false), 2000);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Failed to save account settings.");
+    } finally {
+      setIsAccountSaving(false);
+    }
   };
 
   const toggleTargetLanguage = (lang: string) => {
@@ -114,6 +205,18 @@ export default function SettingsPage() {
         <h2 className="font-heading font-black text-2xl text-white">System Settings</h2>
         <p className="text-sm text-slate-400">Configure language mappings, translation models, and user details</p>
       </div>
+
+      {errorMsg && (
+        <div className="p-4 rounded-xl bg-error/10 border border-error/25 text-error text-sm flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+          <button onClick={() => setErrorMsg("")} className="text-error/80 hover:text-white">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Custom Tabs Navigation */}
       <div className="flex border-b border-border-custom bg-white/2 p-1.5 rounded-xl self-start w-fit">
@@ -152,6 +255,13 @@ export default function SettingsPage() {
       {/* PROFILE TAB PANEL */}
       {activeTab === "profile" && (
         <div className="glass-panel rounded-2xl p-6 border border-border-custom max-w-2xl">
+          {isLoading ? (
+            <div className="space-y-4 animate-pulse">
+              <div className="h-20 w-20 rounded-full bg-white/10" />
+              <div className="h-10 bg-white/5 rounded-xl" />
+              <div className="h-10 bg-white/5 rounded-xl" />
+            </div>
+          ) : (
           <form onSubmit={handleProfileSave} className="space-y-6">
             
             {/* Avatar Row */}
@@ -190,6 +300,7 @@ export default function SettingsPage() {
                 <input
                   type="email"
                   required
+                  readOnly
                   value={profileEmail}
                   onChange={(e) => setProfileEmail(e.target.value)}
                   className="w-full px-4 py-2.5 rounded-xl bg-bg-primary/60 border border-border-custom focus:border-accent-violet focus:ring-1 focus:ring-accent-violet text-sm text-white placeholder-slate-500 outline-none transition-all"
@@ -215,7 +326,8 @@ export default function SettingsPage() {
 
             <button
               type="submit"
-              className="px-6 py-2.5 rounded-xl text-xs font-bold text-white relative overflow-hidden bg-accent-violet hover:scale-105 active:scale-95 transition-all glow-violet"
+              disabled={isProfileSaving}
+              className="px-6 py-2.5 rounded-xl text-xs font-bold text-white relative overflow-hidden bg-accent-violet hover:scale-105 active:scale-95 transition-all glow-violet disabled:opacity-50"
             >
               <span className="absolute inset-0 bg-gradient-to-r from-accent-violet to-accent-violet-light" />
               <span className="relative z-10 flex items-center gap-1.5">
@@ -223,6 +335,8 @@ export default function SettingsPage() {
                   <>
                     <Check className="w-3.5 h-3.5 text-white" /> Changes Saved
                   </>
+                ) : isProfileSaving ? (
+                  "Saving..."
                 ) : (
                   "Save Changes"
                 )}
@@ -230,12 +344,20 @@ export default function SettingsPage() {
             </button>
 
           </form>
+          )}
         </div>
       )}
 
       {/* LANGUAGE PREFERENCES TAB PANEL */}
       {activeTab === "language" && (
         <div className="glass-panel rounded-2xl p-6 border border-border-custom max-w-2xl">
+          {isLoading ? (
+            <div className="space-y-4 animate-pulse">
+              <div className="h-10 bg-white/5 rounded-xl" />
+              <div className="h-10 bg-white/5 rounded-xl" />
+              <div className="h-24 bg-white/5 rounded-xl" />
+            </div>
+          ) : (
           <form onSubmit={handleLanguageSave} className="space-y-6">
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -356,7 +478,8 @@ export default function SettingsPage() {
 
             <button
               type="submit"
-              className="px-6 py-2.5 rounded-xl text-xs font-bold text-white relative overflow-hidden bg-accent-violet hover:scale-105 active:scale-95 transition-all glow-violet"
+              disabled={isLanguageSaving}
+              className="px-6 py-2.5 rounded-xl text-xs font-bold text-white relative overflow-hidden bg-accent-violet hover:scale-105 active:scale-95 transition-all glow-violet disabled:opacity-50"
             >
               <span className="absolute inset-0 bg-gradient-to-r from-accent-violet to-accent-violet-light" />
               <span className="relative z-10 flex items-center gap-1.5">
@@ -364,6 +487,8 @@ export default function SettingsPage() {
                   <>
                     <Check className="w-3.5 h-3.5 text-white" /> Settings Saved
                   </>
+                ) : isLanguageSaving ? (
+                  "Saving..."
                 ) : (
                   "Save Preferences"
                 )}
@@ -371,6 +496,7 @@ export default function SettingsPage() {
             </button>
 
           </form>
+          )}
         </div>
       )}
 
@@ -380,6 +506,13 @@ export default function SettingsPage() {
           
           {/* Security details form */}
           <div className="glass-panel rounded-2xl p-6 border border-border-custom">
+            {isLoading ? (
+              <div className="space-y-4 animate-pulse">
+                <div className="h-10 bg-white/5 rounded-xl" />
+                <div className="h-10 bg-white/5 rounded-xl" />
+                <div className="h-10 bg-white/5 rounded-xl" />
+              </div>
+            ) : (
             <form onSubmit={handleAccountSave} className="space-y-6">
               <h3 className="font-heading font-bold text-base text-white flex items-center gap-2">
                 <Lock className="w-4 h-4 text-accent-cyan" /> Security & Notification Rules
@@ -470,7 +603,8 @@ export default function SettingsPage() {
 
               <button
                 type="submit"
-                className="px-6 py-2.5 rounded-xl text-xs font-bold text-white relative overflow-hidden bg-accent-violet hover:scale-105 active:scale-95 transition-all glow-violet"
+                disabled={isAccountSaving}
+                className="px-6 py-2.5 rounded-xl text-xs font-bold text-white relative overflow-hidden bg-accent-violet hover:scale-105 active:scale-95 transition-all glow-violet disabled:opacity-50"
               >
                 <span className="absolute inset-0 bg-gradient-to-r from-accent-violet to-accent-violet-light" />
                 <span className="relative z-10 flex items-center gap-1.5">
@@ -478,12 +612,15 @@ export default function SettingsPage() {
                     <>
                       <Check className="w-3.5 h-3.5 text-white" /> Changes Saved
                     </>
+                  ) : isAccountSaving ? (
+                    "Saving..."
                   ) : (
                     "Save Security Settings"
                   )}
                 </span>
               </button>
             </form>
+            )}
           </div>
 
           {/* Danger zone */}
