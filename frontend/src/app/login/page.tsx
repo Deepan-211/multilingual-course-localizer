@@ -5,22 +5,33 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Sparkles, Mail, Lock, ArrowLeft } from "lucide-react";
+import { api } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) return;
     setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
+    setError(null);
+    try {
+      const data = await api.login(email, password);
+      if (data.access_token) {
+        localStorage.setItem("token", data.access_token);
+        router.push("/dashboard");
+      } else {
+        setError(data.detail || "Login failed. Please try again.");
+      }
+    } catch {
+      setError("Something went wrong. Please try again.");
+    } finally {
       setIsLoading(false);
-      router.push("/dashboard");
-    }, 1200);
+    }
   };
 
   return (
@@ -101,6 +112,10 @@ export default function LoginPage() {
                 />
               </div>
             </div>
+
+            {error && (
+              <p className="text-sm text-red-400 text-center">{error}</p>
+            )}
 
             <button
               type="submit"

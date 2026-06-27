@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Sparkles, User, Mail, Lock, ArrowLeft } from "lucide-react";
+import { api } from "@/lib/api";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -14,17 +15,24 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !email || !password || password !== confirmPassword) return;
     setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      const data = await api.register(name, email, password);
+      if (data.access_token) {
+        localStorage.setItem("token", data.access_token);
+        router.push("/dashboard");
+      } else {
+        alert(data.detail || "Registration failed. Please try again.");
+      }
+    } catch {
+      alert("Something went wrong. Please try again.");
+    } finally {
       setIsLoading(false);
-      router.push("/dashboard");
-    }, 1200);
+    }
   };
-
   return (
     <div className="min-h-screen bg-bg-primary bg-grid-pattern flex flex-col justify-center items-center px-4 relative">
       {/* Background decoration */}
