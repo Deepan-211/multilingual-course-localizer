@@ -144,7 +144,7 @@ function buildHistoricalLogs(
         originalLang: course?.source_language ?? "English",
         targetLangs: group.langs,
         date: formatDate(latestDate),
-        status: hasCompleted ? "Completed" : "Failed",
+        status: (hasCompleted ? "Completed" : "Failed") as "Completed" | "Failed",
       };
     })
     .sort((a, b) => b.date.localeCompare(a.date));

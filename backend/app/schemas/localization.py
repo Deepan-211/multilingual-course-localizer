@@ -64,6 +64,7 @@ class WorkspaceResponse(BaseModel):
     course_id: UUID
     course_title: str
     source_language: str
+    localization_id: UUID | None = None
     blocks: list[WorkspaceBlockPair]
 
 

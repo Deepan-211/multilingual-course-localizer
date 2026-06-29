@@ -1,5 +1,10 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+}
+
 export interface DashboardStats {
   total_courses: number;
   languages_processed: number;
@@ -89,6 +94,44 @@ export interface CourseListResponse {
   total: number;
 }
 
+export interface CourseResponse extends CourseListItem {}
+
+export interface LocalizationStatusResponse {
+  localization_id: string;
+  status: string;
+  progress_percentage: number;
+  estimated_time_seconds: number | null;
+  target_language: string;
+}
+
+export interface ContentBlock {
+  id: string;
+  block_number: number;
+  original_text: string;
+}
+
+export interface TranslatedBlock {
+  id: string;
+  block_id: string;
+  translated_text: string;
+  confidence_score: string;
+  is_approved: boolean;
+}
+
+export interface WorkspaceBlockPair {
+  block_number: number;
+  source: ContentBlock;
+  translation: TranslatedBlock | null;
+}
+
+export interface WorkspaceResponse {
+  course_id: string;
+  course_title: string;
+  source_language: string;
+  localization_id: string | null;
+  blocks: WorkspaceBlockPair[];
+}
+
 export interface UserProfile {
   id: string;
   name: string;
@@ -140,22 +183,22 @@ async function mutateWithAuth<T>(
 
 export const api = {
   // Auth
-  register: async (name: string, email: string, password: string) => {
+  register: async (name: string, email: string, password: string): Promise<TokenResponse> => {
     const res = await fetch(`${API_URL}/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, email, password }),
     });
-    return res.json();
+    return parseResponse<TokenResponse>(res);
   },
 
-  login: async (email: string, password: string) => {
+  login: async (email: string, password: string): Promise<TokenResponse> => {
     const res = await fetch(`${API_URL}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
-    return res.json();
+    return parseResponse<TokenResponse>(res);
   },
 
   getMe: (token: string) => fetchWithAuth<UserProfile>("/auth/me", token),
@@ -218,6 +261,9 @@ export const api = {
 
   listCourses: (token: string) => fetchWithAuth<CourseListResponse>("/courses/", token),
 
+  getCourse: (token: string, courseId: string) =>
+    fetchWithAuth<CourseResponse>(`/courses/${courseId}`, token),
+
   deleteCourse: async (token: string, courseId: string) => {
     const res = await fetch(`${API_URL}/courses/${courseId}`, {
       method: "DELETE",
@@ -243,6 +289,42 @@ export const api = {
   },
 
   getProgress: (token: string) => fetchWithAuth<ProgressItem[]>("/progress", token),
+
+  getLocalizationStatus: (token: string, localizationId: string) =>
+    fetchWithAuth<LocalizationStatusResponse>(`/localize/${localizationId}/status`, token),
+
+  // Workspace
+  getWorkspace: (token: string, courseId: string, language?: string) => {
+    const path = `/workspace/${courseId}${language ? `?language=${encodeURIComponent(language)}` : ""}`;
+    return fetchWithAuth<WorkspaceResponse>(path, token);
+  },
+
+  updateBlock: (token: string, blockId: string, data: { translated_text: string }) =>
+    mutateWithAuth<TranslatedBlock>(`/workspace/block/${blockId}`, token, "PUT", data),
+
+  approveLocalization: (token: string, localizationId: string) =>
+    mutateWithAuth<{ message: string }>(`/workspace/${localizationId}/approve`, token, "POST"),
+
+  exportLocalization: async (token: string, localizationId: string, format: "pdf" | "text") => {
+    const res = await fetch(`${API_URL}/workspace/${localizationId}/export`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ format }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const detail = typeof data.detail === "string" ? data.detail : "Export failed";
+      throw new Error(detail);
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get("Content-Disposition") ?? "";
+    const match = disposition.match(/filename="([^"]+)"/);
+    const filename = match?.[1] ?? `export.${format === "pdf" ? "pdf" : "txt"}`;
+    return { blob, filename };
+  },
 
   uploadCourse: async (
     token: string,

@@ -21,14 +21,10 @@ export default function RegisterPage() {
     setIsLoading(true);
     try {
       const data = await api.register(name, email, password);
-      if (data.access_token) {
-        localStorage.setItem("token", data.access_token);
-        router.push("/dashboard");
-      } else {
-        alert(data.detail || "Registration failed. Please try again.");
-      }
-    } catch {
-      alert("Something went wrong. Please try again.");
+      localStorage.setItem("token", data.access_token);
+      router.push("/dashboard");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     } finally {
       setIsLoading(false);
     }

@@ -178,8 +178,9 @@ class LocalizationService:
 
         await self._verify_course_owner(user_id, UUID(loc["course_id"]))
         return loc
-
-    async def get_workspace(self, user_id: UUID, course_id: UUID) -> WorkspaceResponse:
+    async def get_workspace(
+        self, user_id: UUID, course_id: UUID, target_language: str | None = None
+    ) -> WorkspaceResponse:
         """Return source and translated blocks side by side."""
         course = await self._verify_course_owner(user_id, course_id)
 
@@ -190,9 +191,13 @@ class LocalizationService:
             ascending=True,
         )
 
+        loc_filters = {"course_id": str(course_id)}
+        if target_language:
+            loc_filters["target_language"] = target_language
+
         locs = await self.db.select(
             "localizations",
-            {"course_id": str(course_id)},
+            loc_filters,
             order_by="created_at",
             ascending=False,
             limit=1,
@@ -231,13 +236,15 @@ class LocalizationService:
                 )
             )
 
+        localization_id = locs[0]["id"] if locs else None
+
         return WorkspaceResponse(
             course_id=course["id"],
             course_title=course["title"],
             source_language=course["source_language"],
+            localization_id=localization_id,
             blocks=pairs,
         )
-
     async def update_block(
         self, user_id: UUID, block_id: UUID, payload: BlockUpdateRequest
     ) -> TranslatedBlockResponse:

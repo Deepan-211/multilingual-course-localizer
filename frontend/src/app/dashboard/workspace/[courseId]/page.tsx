@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useApp } from "@/context/AppContext";
 import { 
   ArrowLeft, 
   Copy, 
@@ -13,56 +12,131 @@ import {
   Layout, 
   Columns, 
   AlertCircle,
-  HelpCircle,
   Sparkles,
   ChevronRight,
   Globe
 } from "lucide-react";
+import { api, WorkspaceBlockPair, CourseResponse } from "@/lib/api";
 
 export default function LocalizationWorkspace() {
   const router = useRouter();
   const params = useParams();
-  const { courses, updateCourseTranslation } = useApp();
   
-  // Find Course
   const courseId = params.courseId as string;
-  const course = courses.find((c) => c.id === courseId);
 
   // States
+  const [course, setCourse] = useState<CourseResponse | null>(null);
+  const [blocks, setBlocks] = useState<WorkspaceBlockPair[]>([]);
+  const [localizationId, setLocalizationId] = useState<string | null>(null);
+  const [targetLangs, setTargetLangs] = useState<string[]>([]);
   const [selectedTargetLang, setSelectedTargetLang] = useState("");
-  const [activeBlockId, setActiveBlockId] = useState<number | null>(1);
+  const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
   const [isSingleColumn, setIsSingleColumn] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [savingBlockId, setSavingBlockId] = useState<string | null>(null);
 
-  // Set default target lang once course is loaded
+  // Load course details, localizations and workspace
   useEffect(() => {
-    if (course && course.targetLangs.length > 0 && !selectedTargetLang) {
-      setSelectedTargetLang(course.targetLangs[0]);
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setErrorMsg("You are not signed in. Please log in to view the workspace.");
+      setIsLoading(false);
+      return;
     }
-  }, [course, selectedTargetLang]);
 
-  if (!course) {
-    return (
-      <div className="text-center py-20 space-y-4">
-        <AlertCircle className="w-12 h-12 text-rose-500 mx-auto" />
-        <h3 className="font-heading font-bold text-xl text-white">Course Not Found</h3>
-        <p className="text-slate-400">The requested localization workspace does not exist or has been deleted.</p>
-        <Link href="/dashboard/library" className="inline-flex items-center gap-2 text-accent-cyan hover:underline font-semibold">
-          <ArrowLeft className="w-4 h-4" /> Return to Library
-        </Link>
-      </div>
+    const loadWorkspaceData = async () => {
+      setIsLoading(true);
+      setErrorMsg(null);
+      try {
+        // Fetch course info
+        const courseData = await api.getCourse(token, courseId);
+        setCourse(courseData);
+
+        // Fetch target languages from all localizations
+        const [progressData, libraryData] = await Promise.all([
+          api.getProgress(token),
+          api.getLibrary(token)
+        ]);
+
+        const courseProgressLocs = progressData.filter(item => item.course_id === courseId);
+        const courseLibraryLocs = libraryData.items.filter(item => item.course_id === courseId);
+        const langs = [...new Set([
+          ...courseProgressLocs.map(item => item.target_language),
+          ...courseLibraryLocs.map(item => item.target_language)
+        ])];
+        setTargetLangs(langs);
+
+        // Decide which target language to load
+        let activeLang = selectedTargetLang;
+        if (langs.length > 0 && !activeLang) {
+          activeLang = langs[0];
+          setSelectedTargetLang(activeLang);
+        }
+
+        // Fetch workspace
+        const ws = await api.getWorkspace(token, courseId, activeLang || undefined);
+        setBlocks(ws.blocks);
+        setLocalizationId(ws.localization_id);
+
+        if (ws.blocks.length > 0 && !activeBlockId) {
+          setActiveBlockId(ws.blocks[0].source.id);
+        }
+      } catch (err) {
+        setErrorMsg(err instanceof Error ? err.message : "Failed to load workspace data.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadWorkspaceData();
+  }, [courseId, selectedTargetLang]);
+
+  const handleTextareaChange = (sourceBlockId: string, text: string) => {
+    setBlocks((prev) =>
+      prev.map((b) =>
+        b.source.id === sourceBlockId
+          ? {
+              ...b,
+              translation: b.translation
+                ? { ...b.translation, translated_text: text }
+                : {
+                    id: "",
+                    block_id: sourceBlockId,
+                    translated_text: text,
+                    confidence_score: "medium",
+                    is_approved: false,
+                  },
+            }
+          : b
+      )
     );
-  }
+  };
 
-  const sourceBlocks = course.sourceBlocks;
-  const translatedBlocks = course.translatedBlocks[selectedTargetLang] || [];
+  const handleBlockSave = async (block: WorkspaceBlockPair) => {
+    if (!block.translation || !block.translation.id) return;
+    const token = localStorage.getItem("token");
+    if (!token) return;
 
-  const handleTextareaChange = (blockId: number, text: string) => {
-    updateCourseTranslation(courseId, selectedTargetLang, blockId, text);
+    setSavingBlockId(block.source.id);
+    try {
+      await api.updateBlock(token, block.translation.id, {
+        translated_text: block.translation.translated_text
+      });
+    } catch (err) {
+      console.error("Failed to save block:", err);
+      alert("Failed to save block edit. Please try again.");
+    } finally {
+      setSavingBlockId(null);
+    }
   };
 
   const handleCopyAll = () => {
-    const fullText = translatedBlocks.map((b) => b.text).join("\n\n");
+    const fullText = blocks
+      .map((b) => b.translation?.translated_text || "")
+      .filter(Boolean)
+      .join("\n\n");
     navigator.clipboard.writeText(fullText);
     alert("Copied all translations to clipboard!");
   };
@@ -72,14 +146,72 @@ export default function LocalizationWorkspace() {
     setTimeout(() => setIsSaved(false), 2000);
   };
 
-  const handleApprovePublish = () => {
-    alert(`Course "${course.title}" approved and compiled in ${selectedTargetLang}! Files synchronized to LMS.`);
-    router.push("/dashboard/library");
+  const handleApprovePublish = async () => {
+    if (!localizationId) {
+      alert("No active localization job found to approve.");
+      return;
+    }
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    if (!confirm("Are you sure you want to approve all translations and mark this localization as completed?")) return;
+
+    try {
+      await api.approveLocalization(token, localizationId);
+      alert(`Course "${course?.title}" approved and compiled in ${selectedTargetLang}! Files synchronized to LMS.`);
+      router.push("/dashboard/library");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to approve localization.");
+    }
   };
 
-  // Find confidence rating of selected block
-  const selectedBlockTranslation = translatedBlocks.find(b => b.id === activeBlockId);
-  const currentConfidence = selectedBlockTranslation?.confidence || "Medium";
+  const handleDownloadPDF = async () => {
+    if (!localizationId) {
+      alert("No active localization job found to export.");
+      return;
+    }
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    try {
+      const { blob, filename } = await api.exportLocalization(token, localizationId, "pdf");
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to export localization.");
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="w-8 h-8 border-4 border-accent-violet/30 border-t-accent-violet rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (errorMsg || !course) {
+    return (
+      <div className="text-center py-20 space-y-4">
+        <AlertCircle className="w-12 h-12 text-rose-500 mx-auto" />
+        <h3 className="font-heading font-bold text-xl text-white">Course Not Found</h3>
+        <p className="text-slate-400">{errorMsg || "The requested localization workspace does not exist or has been deleted."}</p>
+        <Link href="/dashboard/library" className="inline-flex items-center gap-2 text-accent-cyan hover:underline font-semibold">
+          <ArrowLeft className="w-4 h-4" /> Return to Library
+        </Link>
+      </div>
+    );
+  }
+
+  const activeBlock = blocks.find((b) => b.source.id === activeBlockId);
+  const currentConfidenceRaw = activeBlock?.translation?.confidence_score || "medium";
+  const currentConfidence = (currentConfidenceRaw.charAt(0).toUpperCase() + currentConfidenceRaw.slice(1)) as "High" | "Medium" | "Low";
 
   const getConfidenceBadge = (confidence: "High" | "Medium" | "Low") => {
     switch (confidence) {
@@ -122,15 +254,17 @@ export default function LocalizationWorkspace() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-slate-400 font-bold uppercase tracking-wider">{course.contentType}</span>
+            <span className="text-slate-400 font-bold uppercase tracking-wider">
+              {course.content_type === "pdf" ? "PDF Document" : "Video Course"}
+            </span>
             <span className="text-slate-600">•</span>
             <span className="bg-bg-primary border border-border-custom px-2.5 py-0.5 rounded-md font-semibold text-slate-300 flex items-center gap-1">
-              {course.originalLang} 
+              {course.source_language} 
               <ChevronRight className="w-3 h-3 text-slate-500" /> 
               {selectedTargetLang || "Loading..."}
             </span>
             <span className="text-slate-600">•</span>
-            <span className="text-slate-400">AI Model: <span className="text-accent-cyan font-bold">{course.aiModel}</span></span>
+            <span className="text-slate-400">Status: <span className="text-accent-cyan font-bold">{course.localization_status || "processing"}</span></span>
           </div>
         </div>
 
@@ -140,13 +274,13 @@ export default function LocalizationWorkspace() {
             <Globe className="w-3.5 h-3.5" /> Language:
           </span>
           <div className="flex gap-1">
-            {course.targetLangs.map((lang) => (
+            {targetLangs.map((lang) => (
               <button
                 key={lang}
                 type="button"
                 onClick={() => {
                   setSelectedTargetLang(lang);
-                  setActiveBlockId(1);
+                  setActiveBlockId(null);
                 }}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                   selectedTargetLang === lang
@@ -173,7 +307,7 @@ export default function LocalizationWorkspace() {
           </button>
           
           <button
-            onClick={() => alert("Downloading formatted translation script as PDF...")}
+            onClick={handleDownloadPDF}
             className="px-3 py-2 rounded-lg border border-border-custom hover:border-slate-500 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 bg-bg-primary/40 transition-all"
           >
             <Download className="w-3.5 h-3.5" /> Download PDF
@@ -214,27 +348,32 @@ export default function LocalizationWorkspace() {
           {/* LEFT: SOURCE PANEL */}
           <div className={`flex flex-col h-full bg-bg-secondary border border-border-custom rounded-2xl overflow-hidden ${isSingleColumn ? "h-auto overflow-y-visible" : ""}`}>
             <div className="px-5 py-3 border-b border-border-custom bg-white/2 font-heading font-bold text-sm text-slate-300 flex items-center justify-between">
-              <span>Source Transcript (English)</span>
+              <span>Source Transcript ({course.source_language})</span>
               <span className="text-[10px] text-slate-500 font-mono uppercase">Original</span>
             </div>
             
             <div className={`flex-1 p-5 overflow-y-auto space-y-4 custom-scroll ${isSingleColumn ? "overflow-y-visible" : ""}`}>
-              {sourceBlocks.map((block) => {
-                const isActive = block.id === activeBlockId;
+              {blocks.map((block) => {
+                const isActive = block.source.id === activeBlockId;
                 return (
                   <div
-                    key={block.id}
-                    onClick={() => setActiveBlockId(block.id)}
+                    key={block.source.id}
+                    onClick={() => setActiveBlockId(block.source.id)}
                     className={`p-4 rounded-xl border transition-all cursor-pointer ${
                       isActive
                         ? "border-accent-violet/60 bg-accent-violet/5 text-white shadow-lg shadow-accent-violet/5"
                         : "border-border-custom/50 bg-white/2 text-slate-300 hover:border-slate-500/50"
                     }`}
                   >
-                    <span className="text-[10px] text-accent-violet-light font-black tracking-wider block mb-1">
-                      BLOCK {block.id.toString().padStart(2, "0")}
-                    </span>
-                    <p className="leading-relaxed text-sm">{block.text}</p>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] text-accent-violet-light font-black tracking-wider block">
+                        BLOCK {block.block_number.toString().padStart(2, "0")}
+                      </span>
+                      {savingBlockId === block.source.id && (
+                        <span className="text-[9px] text-accent-violet font-semibold animate-pulse">Saving...</span>
+                      )}
+                    </div>
+                    <p className="leading-relaxed text-sm">{block.source.original_text}</p>
                   </div>
                 );
               })}
@@ -251,12 +390,12 @@ export default function LocalizationWorkspace() {
             </div>
 
             <div className={`flex-1 p-5 overflow-y-auto space-y-4 custom-scroll ${isSingleColumn ? "overflow-y-visible" : ""}`}>
-              {translatedBlocks.map((block) => {
-                const isActive = block.id === activeBlockId;
+              {blocks.map((block) => {
+                const isActive = block.source.id === activeBlockId;
                 return (
                   <div
-                    key={block.id}
-                    onClick={() => setActiveBlockId(block.id)}
+                    key={block.source.id}
+                    onClick={() => setActiveBlockId(block.source.id)}
                     className={`p-4 rounded-xl border transition-all ${
                       isActive
                         ? "border-accent-cyan/60 bg-accent-cyan/5 text-white shadow-lg shadow-accent-cyan/5"
@@ -264,12 +403,13 @@ export default function LocalizationWorkspace() {
                     }`}
                   >
                     <span className="text-[10px] text-accent-cyan font-black tracking-wider block mb-1">
-                      BLOCK {block.id.toString().padStart(2, "0")}
+                      BLOCK {block.block_number.toString().padStart(2, "0")}
                     </span>
                     <textarea
                       rows={3}
-                      value={block.text}
-                      onChange={(e) => handleTextareaChange(block.id, e.target.value)}
+                      value={block.translation?.translated_text || ""}
+                      onChange={(e) => handleTextareaChange(block.source.id, e.target.value)}
+                      onBlur={() => handleBlockSave(block)}
                       placeholder="Input translated content block..."
                       className="w-full bg-transparent border-0 p-0 text-sm text-white focus:ring-0 outline-none resize-none placeholder-slate-600 leading-relaxed"
                     />
@@ -285,7 +425,7 @@ export default function LocalizationWorkspace() {
       {/* Bottom status bar */}
       <div className="bg-bg-secondary border border-border-custom p-4 rounded-xl flex items-center justify-between text-xs text-slate-400 shrink-0">
         <div className="flex items-center gap-3">
-          <span>Active Selection: <span className="text-white font-bold">Block {activeBlockId?.toString().padStart(2, "0")}</span></span>
+          <span>Active Selection: <span className="text-white font-bold">Block {activeBlock ? activeBlock.block_number.toString().padStart(2, "0") : "—"}</span></span>
           <span className="text-slate-600">|</span>
           <div className="flex items-center gap-2">
             <span>AI Confidence Score:</span>

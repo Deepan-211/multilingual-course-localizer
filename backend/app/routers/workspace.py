@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 
 from app.middleware.auth_middleware import get_current_user
@@ -23,9 +23,10 @@ router = APIRouter(prefix="/workspace", tags=["Workspace"])
 async def get_workspace(
     course_id: UUID,
     current_user: Annotated[UserResponse, Depends(get_current_user)],
+    language: str | None = Query(None, description="Target language to fetch translations for"),
 ) -> WorkspaceResponse:
     """Return source and translated content blocks side by side."""
-    return await LocalizationService().get_workspace(current_user.id, course_id)
+    return await LocalizationService().get_workspace(current_user.id, course_id, language)
 
 
 @router.put(

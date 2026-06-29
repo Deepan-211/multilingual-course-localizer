@@ -21,14 +21,10 @@ export default function LoginPage() {
     setError(null);
     try {
       const data = await api.login(email, password);
-      if (data.access_token) {
-        localStorage.setItem("token", data.access_token);
-        router.push("/dashboard");
-      } else {
-        setError(data.detail || "Login failed. Please try again.");
-      }
-    } catch {
-      setError("Something went wrong. Please try again.");
+      localStorage.setItem("token", data.access_token);
+      router.push("/dashboard");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     } finally {
       setIsLoading(false);
     }
