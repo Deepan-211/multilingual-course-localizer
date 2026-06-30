@@ -105,6 +105,10 @@ export default function SettingsPage() {
       const updated = await api.updateProfile(token, { name: profileName.trim() });
       setProfileName(updated.name);
       setProfileEmail(updated.email);
+      
+      // 👉 THE NEW LINE: Save the exact name to the browser so the Header can grab it
+      localStorage.setItem("userName", updated.name);
+      
       setIsProfileSaved(true);
       setTimeout(() => setIsProfileSaved(false), 2000);
     } catch (err) {
@@ -112,7 +116,6 @@ export default function SettingsPage() {
     } finally {
       setIsProfileSaving(false);
     }
-  };
 
   const handleLanguageSave = async (e: React.FormEvent) => {
     e.preventDefault();
