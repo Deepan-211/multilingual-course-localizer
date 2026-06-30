@@ -21,8 +21,15 @@ export default function LoginPage() {
     setError(null);
     try {
       const data = await api.login(email, password);
-      localStorage.setItem("token", data.access_token);
-      router.push("/dashboard");
+      
+      // 1. Saves your login token
+      localStorage.setItem("token", data.access_token); 
+      
+      // 👉 2. THE NEW LINE: Saves your name so the header can see it
+      localStorage.setItem("userName", data.name); // NOTE: Change data.name if your backend uses data.full_name
+      
+      // 3. Sends you to the dashboard
+      router.push("/dashboard"); 
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     } finally {
