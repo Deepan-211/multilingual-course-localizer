@@ -102,27 +102,35 @@ export default function SettingsPage() {
     setErrorMsg("");
 
     try {
+      // 1. Send the data to the backend
       const updated = await api.updateProfile(token, { name: profileName.trim() });
-      setProfileName(updated.name);
-      setProfileEmail(updated.email);
       
-      // 👉 THE NEW LINE: Save the exact name to the browser so the Header can grab it
-      localStorage.setItem("userName", updated.name);
+      // 2. THE FIX: Grab the exact text you typed in the box, ignoring what Python sends back
+      const finalName = profileName.trim();
+      
+      setProfileName(finalName);
+      if (updated.email) setProfileEmail(updated.email);
+      
+      // 3. Save it to local storage using the guaranteed text
+      localStorage.setItem("userName", finalName);
+      
+      // 4. Force the header to update instantly
+      setUserProfile({
+        name: finalName,
+        email: userProfile.email || "",
+        role: userProfile.role || "Instructor",
+        avatar: finalName.charAt(0).toUpperCase()
+      });
       
       setIsProfileSaved(true);
       setTimeout(() => setIsProfileSaved(false), 2000);
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Failed to save profile.");
-    } finally {
-      setIsProfileSaving(false);
     }
-
-  const handleLanguageSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (preferredTargetLangs.length === 0) {
-      setErrorMsg("Please select at least one preferred target language.");
-      return;
-    }
+  } catch (err) {
+    setErrorMsg(err instanceof Error ? err.message : "Failed to save profile.");
+  } finally {
+    setIsProfileSaving(false);
+  }
+    }s
 
     const token = localStorage.getItem("token");
     if (!token) {
