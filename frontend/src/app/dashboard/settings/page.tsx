@@ -21,7 +21,11 @@ import {
 
 export default function SettingsPage() {
   const [isLoading, setIsLoading] = useState(true);
+  const [isNotifUpload, setIsNotifUpload] = useState(false);
+  const [isNotifComplete, setIsNotifComplete] = useState(false);
+  const [isNotifAlerts, setIsNotifAlerts] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  
 
   // Tabs
   const [activeTab, setActiveTab] = useState<"profile" | "language" | "account">("profile");
@@ -102,105 +106,29 @@ export default function SettingsPage() {
     setErrorMsg("");
 
     try {
-      // 1. Send the data to the backend
+      // 1. Save to the database
       const updated = await api.updateProfile(token, { name: profileName.trim() });
+      setProfileName(updated.name);
+      setProfileEmail(updated.email);
       
-      // 2. THE FIX: Grab the exact text you typed in the box, ignoring what Python sends back
-      const finalName = profileName.trim();
+      // 2. Save the exact text you typed into the browser
+      localStorage.setItem("userName", profileName.trim());
       
-      setProfileName(finalName);
-      if (updated.email) setProfileEmail(updated.email);
+      // 3. THE NUCLEAR FLARE: Fire the custom event to force the header to update right now
+      window.dispatchEvent(new Event("syncProfile"));
       
-      // 3. Save it to local storage using the guaranteed text
-      localStorage.setItem("userName", finalName);
-      
-      // 4. Force the header to update instantly
-      setUserProfile({
-        name: finalName,
-        email: userProfile.email || "",
-        role: userProfile.role || "Instructor",
-        avatar: finalName.charAt(0).toUpperCase()
-      });
-      
+      // 4. Show success message
       setIsProfileSaved(true);
       setTimeout(() => setIsProfileSaved(false), 2000);
     }
-  } catch (err) {
+  }catch (err) {
     setErrorMsg(err instanceof Error ? err.message : "Failed to save profile.");
   } finally {
     setIsProfileSaving(false);
   }
-    }s
-
-    const token = localStorage.getItem("token");
-    if (!token) {
-      setErrorMsg("You are not signed in. Please log in to save changes.");
-      return;
     }
 
-    setIsLanguageSaving(true);
-    setErrorMsg("");
-
-    try {
-      await api.updateLanguageSettings(token, {
-        default_source_language: defaultSourceLang,
-        default_target_languages: preferredTargetLangs,
-      });
-      setIsLanguageSaved(true);
-      setTimeout(() => setIsLanguageSaved(false), 2000);
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Failed to save language preferences.");
-    } finally {
-      setIsLanguageSaving(false);
-    }
-  };
-
-  const handleAccountSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const token = localStorage.getItem("token");
-    if (!token) {
-      setErrorMsg("You are not signed in. Please log in to save changes.");
-      return;
-    }
-
-    if (newPassword && newPassword !== confirmPassword) {
-      setErrorMsg("New passwords do not match!");
-      return;
-    }
-
-    if (newPassword && !currentPassword) {
-      setErrorMsg("Please enter your current password to set a new password.");
-      return;
-    }
-
-    setIsAccountSaving(true);
-    setErrorMsg("");
-
-    try {
-      if (newPassword) {
-        await api.changePassword(token, {
-          old_password: currentPassword,
-          new_password: newPassword,
-        });
-        setCurrentPassword("");
-        setNewPassword("");
-        setConfirmPassword("");
-      }
-
-      await api.updateNotificationSettings(token, {
-        email_notifications: notifUpload,
-        localization_complete: notifComplete,
-        weekly_digest: notifAlerts,
-      });
-
-      setIsAccountSaved(true);
-      setTimeout(() => setIsAccountSaved(false), 2000);
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Failed to save account settings.");
-    } finally {
-      setIsAccountSaving(false);
-    }
-  };
+   
 
   const toggleTargetLanguage = (lang: string) => {
     if (preferredTargetLangs.includes(lang)) {

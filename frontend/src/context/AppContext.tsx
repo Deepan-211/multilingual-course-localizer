@@ -207,28 +207,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // 2. Automatically grab the logged-in user's data when the app loads
   useEffect(() => {
-    // 1. Try to check if the browser saved the user's name during login
-    const savedName = localStorage.getItem("userName");
+    // 1. The function that forces the header to read Local Storage
+    const forceHeaderUpdate = () => {
+      const savedName = localStorage.getItem("userName");
+      
+      if (savedName) {
+        setUserProfile({
+          name: savedName,
+          email: "",
+          role: "Instructor",
+          avatar: savedName.charAt(0).toUpperCase(),
+        });
+      } else {
+        setUserProfile({
+          name: "My Account",
+          email: "",
+          role: "Instructor",
+          avatar: "U",
+        });
+      }
+    };
 
-    if (savedName) {
-      // 2. If a name is found, show their real name and avatar instantly
-      setUserProfile({
-        name: savedName,
-        email: "",
-        role: "Instructor",
-        avatar: savedName.charAt(0).toUpperCase(),
-      });
-    } else {
-      // 3. If no name is found, STOP loading. Show a default profile so it doesn't freeze.
-      setUserProfile({
-        name: "My Account",
-        email: "",
-        role: "Instructor",
-        avatar: "U",
-      });
-    }
+    // 2. Run it immediately when the app opens
+    forceHeaderUpdate();
+
+    // 3. THE NUCLEAR TRIGGER: Listen for the global signal from your Settings page
+    window.addEventListener("syncProfile", forceHeaderUpdate);
+
+    // 4. Cleanup listener
+    return () => window.removeEventListener("syncProfile", forceHeaderUpdate);
   }, []);
-
   // ... rest of your provider code (return <AppContext.Provider value={...}>)
 
   const [settings, setSettings] = useState<AppSettings>({
