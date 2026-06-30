@@ -207,33 +207,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // 2. Automatically grab the logged-in user's data when the app loads
   useEffect(() => {
-    // If you save user info in localStorage during login, grab it here:
-    const storedName = localStorage.getItem("userName");
-    const storedEmail = localStorage.getItem("userEmail");
+    // 1. Try to check if the browser saved the user's name during login
+    const savedName = localStorage.getItem("userName");
 
-    if (storedName) {
-      // Instantly update the header with the real user's details
+    if (savedName) {
+      // 2. If a name is found, show their real name and avatar instantly
       setUserProfile({
-        name: storedName,
-        email: storedEmail || "",
+        name: savedName,
+        email: "",
         role: "Instructor",
-        avatar: storedName.charAt(0).toUpperCase(), // Grabs the first letter for the avatar
+        avatar: savedName.charAt(0).toUpperCase(),
       });
     } else {
-      // OPTIONAL: If they aren't in localStorage, fetch from your backend API
-      fetch("YOUR_BACKEND_URL/profile")
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.full_name) {
-            setUserProfile({
-              name: data.full_name,
-              email: data.email || "",
-              role: data.role || "Instructor",
-              avatar: data.full_name.charAt(0).toUpperCase(),
-            });
-          }
-        })
-        .catch((err) => console.error("Could not load user", err));
+      // 3. If no name is found, STOP loading. Show a default profile so it doesn't freeze.
+      setUserProfile({
+        name: "My Account",
+        email: "",
+        role: "Instructor",
+        avatar: "U",
+      });
     }
   }, []);
 
