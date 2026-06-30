@@ -196,12 +196,48 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [courses, setCourses] = useState<Course[]>(initialCourses);
   const [isSidebarOpen, setSidebarOpen] = useState(true);
+  
+  // 1. Wipe out Alex Mercer. Set this to a blank loading state.
   const [userProfile, setUserProfile] = useState<UserProfile>({
-    name: "Alex Mercer",
-    email: "alex.mercer@localizeai.com",
+    name: "Loading...",
+    email: "...",
     role: "Instructor",
-    avatar: "AM",
+    avatar: "",
   });
+
+  // 2. Automatically grab the logged-in user's data when the app loads
+  useEffect(() => {
+    // If you save user info in localStorage during login, grab it here:
+    const storedName = localStorage.getItem("userName");
+    const storedEmail = localStorage.getItem("userEmail");
+
+    if (storedName) {
+      // Instantly update the header with the real user's details
+      setUserProfile({
+        name: storedName,
+        email: storedEmail || "",
+        role: "Instructor",
+        avatar: storedName.charAt(0).toUpperCase(), // Grabs the first letter for the avatar
+      });
+    } else {
+      // OPTIONAL: If they aren't in localStorage, fetch from your backend API
+      fetch("YOUR_BACKEND_URL/profile")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.full_name) {
+            setUserProfile({
+              name: data.full_name,
+              email: data.email || "",
+              role: data.role || "Instructor",
+              avatar: data.full_name.charAt(0).toUpperCase(),
+            });
+          }
+        })
+        .catch((err) => console.error("Could not load user", err));
+    }
+  }, []);
+
+  // ... rest of your provider code (return <AppContext.Provider value={...}>)
 
   const [settings, setSettings] = useState<AppSettings>({
     defaultSourceLang: "English",
