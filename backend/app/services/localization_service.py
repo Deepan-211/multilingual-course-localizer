@@ -149,6 +149,7 @@ class LocalizationService:
                     "completed_at": datetime.now(UTC).isoformat(),
                 },
             )
+            # forcing update
        except Exception as e:
             import traceback
             print("=========================================")
@@ -441,4 +442,4 @@ class LocalizationService:
         data = ClaudeService.get_ai_status()
         return AIStatusResponse(**data)
 
-        
+
