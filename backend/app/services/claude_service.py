@@ -116,7 +116,7 @@ class ClaudeService:
 
         return {"translated_text": text, "confidence": ConfidenceScore.LOW}
 
-   def _parse_response(self, raw: str, fallback: str) -> dict[str, Any]:
+    def _parse_response(self, raw: str, fallback: str) -> dict[str, Any]:
         """Parse native JSON response with fallback."""
         try:
             data = json.loads(raw)
@@ -129,3 +129,14 @@ class ClaudeService:
             }
         except (json.JSONDecodeError, KeyError):
             return {"translated_text": raw or fallback, "confidence": ConfidenceScore.MEDIUM}
+
+    @classmethod
+    def get_ai_status(cls) -> dict[str, Any]:
+        """Return aggregate API metrics."""
+        avg_time = sum(_response_times) / len(_response_times) if _response_times else 0.0
+        return {
+            "status": "operational" if _active_requests < 10 else "busy",
+            "avg_response_time_ms": round(avg_time, 2),
+            "current_load": _active_requests,
+            "model": MODEL,
+        }
