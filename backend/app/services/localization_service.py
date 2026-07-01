@@ -440,3 +440,5 @@ class LocalizationService:
         """Return Claude API health metrics."""
         data = ClaudeService.get_ai_status()
         return AIStatusResponse(**data)
+
+        
