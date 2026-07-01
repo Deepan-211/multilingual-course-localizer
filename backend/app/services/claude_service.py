@@ -31,10 +31,8 @@ class ClaudeService:
     """Handles AI-powered block translation via Gemini."""
 
     def __init__(self) -> None:
-        # Pulling directly from Railway variables to prevent config schema crashes
         gemini_key = os.environ.get("GEMINI_API_KEY")
         genai.configure(api_key=gemini_key)
-        
         self.model = genai.GenerativeModel(
             model_name=MODEL,
             system_instruction=SYSTEM_PROMPT
@@ -96,7 +94,6 @@ class ClaudeService:
         try:
             for attempt in range(MAX_RETRIES):
                 try:
-                    # Force strict JSON output from Gemini
                     response = await self.model.generate_content_async(
                         user_prompt,
                         generation_config=genai.GenerationConfig(
@@ -125,6 +122,6 @@ class ClaudeService:
             cleaned = raw
             if "```" in raw:
                 match = re.search(r"
-http://googleusercontent.com/immersive_entry_chip/1
+http://googleusercontent.com/immersive_entry_chip/0
 
-Watch Railway until it turns green, then go upload your file in Vercel. You will finally watch that translation progress bar hit the finish line without spending a dime.
+Once the terminal outputs the successful tracking confirmation line, jump over to your Railway dashboard. Wait for the build status to turn clean green, and your service will be fully live.
