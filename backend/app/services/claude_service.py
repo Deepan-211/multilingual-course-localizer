@@ -116,12 +116,16 @@ class ClaudeService:
 
         return {"translated_text": text, "confidence": ConfidenceScore.LOW}
 
-    def _parse_response(self, raw: str, fallback: str) -> dict[str, Any]:
-        """Parse JSON response with fallback."""
+   def _parse_response(self, raw: str, fallback: str) -> dict[str, Any]:
+        """Parse native JSON response with fallback."""
         try:
-            cleaned = raw
-            if "```" in raw:
-                match = re.search(r"
-http://googleusercontent.com/immersive_entry_chip/0
-
-Once the terminal outputs the successful tracking confirmation line, jump over to your Railway dashboard. Wait for the build status to turn clean green, and your service will be fully live.
+            data = json.loads(raw)
+            confidence = str(data.get("confidence", "medium")).lower()
+            if confidence not in ("high", "medium", "low"):
+                confidence = "medium"
+            return {
+                "translated_text": data.get("translated_text", fallback),
+                "confidence": confidence,
+            }
+        except (json.JSONDecodeError, KeyError):
+            return {"translated_text": raw or fallback, "confidence": ConfidenceScore.MEDIUM}
