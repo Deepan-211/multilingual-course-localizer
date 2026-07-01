@@ -149,12 +149,20 @@ class LocalizationService:
                     "completed_at": datetime.now(UTC).isoformat(),
                 },
             )
-        except Exception:
+       except Exception as e:
+            import traceback
+            print("=========================================")
+            print("🚨 CRITICAL TRANSLATION ERROR 🚨")
+            traceback.print_exc() 
+            print("=========================================")
+            
             await self.db.update(
                 "localizations",
                 {"id": str(localization_id)},
                 {"status": "failed"},
             )
+            
+            raise e
 
     async def get_status(self, user_id: UUID, localization_id: UUID) -> LocalizationStatusResponse:
         """Return processing status for a localization job."""
