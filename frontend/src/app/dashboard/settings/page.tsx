@@ -120,8 +120,8 @@ export default function SettingsPage() {
       // 4. Show success message
       setIsProfileSaved(true);
       setTimeout(() => setIsProfileSaved(false), 2000);
-    }
-  }catch (err) {
+    
+    }catch (err) {
     setErrorMsg(err instanceof Error ? err.message : "Failed to save profile.");
   } finally {
     setIsProfileSaving(false);
