@@ -18,7 +18,7 @@ SYSTEM_PROMPT = (
     "terminology, code snippets, and learning objectives."
 )
 
-MODEL = "gemini-1.5-flash"
+MODEL = "gemini-1.5-flash-latest"
 MAX_WORDS_PER_BLOCK = 500
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2.0
