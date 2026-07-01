@@ -1,13 +1,13 @@
-"""Anthropic Claude translation service."""
+"""Google Gemini translation service."""
 
 import asyncio
 import json
+import os
 import re
 import time
 from typing import Any
 
-import anthropic
-from anthropic import RateLimitError
+import google.generativeai as genai
 
 from app.config import get_settings
 from app.models.localization import ConfidenceScore
@@ -18,7 +18,7 @@ SYSTEM_PROMPT = (
     "terminology, code snippets, and learning objectives."
 )
 
-MODEL = "claude-sonnet-4-6"
+MODEL = "gemini-1.5-flash"
 MAX_WORDS_PER_BLOCK = 500
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2.0
@@ -28,11 +28,17 @@ _active_requests = 0
 
 
 class ClaudeService:
-    """Handles AI-powered block translation via Claude."""
+    """Handles AI-powered block translation via Gemini."""
 
     def __init__(self) -> None:
-        settings = get_settings()
-        self.client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        # Pulling directly from Railway variables to prevent config schema crashes
+        gemini_key = os.environ.get("GEMINI_API_KEY")
+        genai.configure(api_key=gemini_key)
+        
+        self.model = genai.GenerativeModel(
+            model_name=MODEL,
+            system_instruction=SYSTEM_PROMPT
+        )
 
     @staticmethod
     def split_into_blocks(text: str, max_words: int = MAX_WORDS_PER_BLOCK) -> list[str]:
@@ -90,22 +96,23 @@ class ClaudeService:
         try:
             for attempt in range(MAX_RETRIES):
                 try:
-                    message = await self.client.messages.create(
-                        model=MODEL,
-                        max_tokens=4096,
-                        system=SYSTEM_PROMPT,
-                        messages=[{"role": "user", "content": user_prompt}],
+                    # Force strict JSON output from Gemini
+                    response = await self.model.generate_content_async(
+                        user_prompt,
+                        generation_config=genai.GenerationConfig(
+                            response_mime_type="application/json"
+                        )
                     )
-                    raw = message.content[0].text.strip()
+                    raw = response.text.strip()
                     result = self._parse_response(raw, text)
                     elapsed_ms = (time.perf_counter() - start) * 1000
                     _response_times.append(elapsed_ms)
                     if len(_response_times) > 100:
                         _response_times.pop(0)
                     return result
-                except RateLimitError:
+                except Exception as e:
                     if attempt == MAX_RETRIES - 1:
-                        raise
+                        raise e
                     await asyncio.sleep(RETRY_BASE_DELAY * (2**attempt))
         finally:
             _active_requests -= 1
@@ -113,31 +120,11 @@ class ClaudeService:
         return {"translated_text": text, "confidence": ConfidenceScore.LOW}
 
     def _parse_response(self, raw: str, fallback: str) -> dict[str, Any]:
-        """Parse Claude JSON response with fallback."""
+        """Parse JSON response with fallback."""
         try:
             cleaned = raw
             if "```" in raw:
-                match = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
-                if match:
-                    cleaned = match.group(1).strip()
-            data = json.loads(cleaned)
-            confidence = str(data.get("confidence", "medium")).lower()
-            if confidence not in ("high", "medium", "low"):
-                confidence = "medium"
-            return {
-                "translated_text": data.get("translated_text", fallback),
-                "confidence": confidence,
-            }
-        except (json.JSONDecodeError, KeyError):
-            return {"translated_text": raw or fallback, "confidence": ConfidenceScore.MEDIUM}
+                match = re.search(r"
+http://googleusercontent.com/immersive_entry_chip/1
 
-    @classmethod
-    def get_ai_status(cls) -> dict[str, Any]:
-        """Return aggregate Claude API metrics."""
-        avg_time = sum(_response_times) / len(_response_times) if _response_times else 0.0
-        return {
-            "status": "operational" if _active_requests < 10 else "busy",
-            "avg_response_time_ms": round(avg_time, 2),
-            "current_load": _active_requests,
-            "model": MODEL,
-        }
+Watch Railway until it turns green, then go upload your file in Vercel. You will finally watch that translation progress bar hit the finish line without spending a dime.
