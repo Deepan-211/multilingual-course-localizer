@@ -8,6 +8,20 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+import os
+import arabic_reshaper
+from bidi.algorithm import get_display
+
+FONT_DIR = os.path.join(os.path.dirname(__file__), "..", "fonts")
+
+_FONT_MAP = {
+    "tamil": ("NotoSansTamil", "NotoSansTamil-Regular.ttf"),
+    "hindi": ("NotoSansDevanagari", "NotoSansDevanagari-Regular.ttf"),
+    "japanese": ("NotoSansJP", "NotoSansJP-Regular.ttf"),
+    "arabic": ("NotoSansArabic", "NotoSansArabic-Regular.ttf"),
+}
 
 from app.schemas.localization import (
     AIStatusResponse,
@@ -340,20 +354,38 @@ class LocalizationService:
         width, height = letter
         y = height - 72
 
-        pdf.setFont("Helvetica-Bold", 16)
-        pdf.drawString(72, y, title[:80])
+        font_name = "Helvetica"
+        lang_key = language.strip().lower()
+        is_arabic = lang_key == "arabic"
+
+        if lang_key in _FONT_MAP:
+            registered_name, filename = _FONT_MAP[lang_key]
+            font_path = os.path.join(FONT_DIR, filename)
+            if os.path.exists(font_path):
+                pdfmetrics.registerFont(TTFont(registered_name, font_path))
+                font_name = registered_name
+
+        def prep_line(line: str) -> str:
+            if is_arabic:
+                reshaped = arabic_reshaper.reshape(line)
+                return get_display(reshaped)
+            return line
+
+        title_font = font_name if font_name != "Helvetica" else "Helvetica-Bold"
+        pdf.setFont(title_font, 16)
+        pdf.drawString(72, y, prep_line(title)[:80])
         y -= 24
         pdf.setFont("Helvetica", 10)
         pdf.drawString(72, y, f"Language: {language}")
         y -= 36
 
-        pdf.setFont("Helvetica", 11)
+        pdf.setFont(font_name, 11)
         for line in content.split("\n"):
             if y < 72:
                 pdf.showPage()
-                pdf.setFont("Helvetica", 11)
+                pdf.setFont(font_name, 11)
                 y = height - 72
-            pdf.drawString(72, y, line[:90])
+            pdf.drawString(72, y, prep_line(line)[:90])
             y -= 14
 
         pdf.save()

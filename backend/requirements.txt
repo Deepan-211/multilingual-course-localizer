@@ -13,3 +13,5 @@ pypdf>=5.1.0
 reportlab>=4.2.0
 python-dotenv>=1.0.0
 google-generativeai==0.8.6
+arabic-reshaper==3.0.0
+python-bidi==0.6.6
